@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabase";
 
 const MODES = [
@@ -20,11 +20,9 @@ let sdc={};
 function tcgdexIdToSymbolUrl(si){if(!si)return null;let id=si;id=id.replace(/([a-z])0+(\d)/gi,"$1$2");id=id.replace(/\./g,"pt");return`https://images.pokemontcg.io/${id}/symbol.png`;}
 function SetSymbol({setId,size}){const[err,setErr]=useState(false);const url=tcgdexIdToSymbolUrl(setId);if(err||!url)return<span style={{fontSize:size*0.7}}>📦</span>;return<img src={url} alt="" style={{width:size,height:size,objectFit:"contain"}} onError={()=>setErr(true)}/>;}
 
-// --- PokeTrace ---
 async function fetchPT(cn,sn){try{const q=encodeURIComponent(cn+" "+sn);const r=await fetch(`/api/poketrace/cards?search=${q}&market=US&limit=10`);if(!r.ok)return[];const d=await r.json();return d.data||[];}catch{return[];}}
 function bestMatch(pts,card){const num=String(card.localId).replace(/^0+/,"");const sn=(card.set||"").toLowerCase();let best=null,bs=-1;for(const pt of pts){if(pt.name?.includes("Japanese"))continue;let sc=0;const pn=(pt.cardNumber?.split("/")?.[0]||"").replace(/^0+/,"");if(pn===num)sc+=10;const ps=(pt.set?.name||"").toLowerCase();if(ps.includes(sn)||sn.includes(ps.replace("sv: scarlet & violet ","").replace("swsh: sword & shield ","")))sc+=5;const pv=(pt.variant||"").toLowerCase();const ov=(card.variant||"").toLowerCase();if(ov.includes("1st")&&pv.includes("1st"))sc+=3;else if(ov.includes("shadowless")&&(ps.includes("shadowless")||pv.includes("unlimited")))sc+=3;else if(ov.includes("reverse")&&pv.includes("reverse"))sc+=3;else if(ov.includes("holo")&&pv.includes("holo")&&!pv.includes("reverse"))sc+=2;else if(ov.includes("normal")&&(pv.includes("normal")||pv===""))sc+=2;if(sc>bs){bs=sc;best=pt;}}return best;}
 
-// --- TCGdex ---
 async function gSD(sid){if(sdc[sid])return sdc[sid];try{const r=await fetch(`${API}/sets/${sid}`);if(!r.ok)return null;const d=await r.json();sdc[sid]=d.releaseDate||null;return sdc[sid];}catch{return null;}}
 async function sPoke(q){const r=await fetch(`https://pokeapi.co/api/v2/pokemon/${q.toLowerCase().trim()}`);if(!r.ok)return null;const d=await r.json();return{name:d.name,id:d.id,sprite:d.sprites.other["official-artwork"].front_default||d.sprites.front_default};}
 async function gBriefs(name){const r=await fetch(`${API}/cards?name=${encodeURIComponent(name)}`);if(!r.ok)return[];const d=await r.json();return Array.isArray(d)?d:[];}
@@ -34,7 +32,6 @@ let allSetsCache=null;async function fetchAllSets(){if(allSetsCache)return allSe
 async function fetchSet(si){const r=await fetch(`${API}/sets/${si}`);if(!r.ok)return null;return await r.json();}
 let allPokemonCache=null;async function fetchAllPokemon(){if(allPokemonCache)return allPokemonCache;const r=await fetch("https://pokeapi.co/api/v2/pokemon?limit=1025");if(!r.ok)return[];const d=await r.json();allPokemonCache=(d.results||[]).map((p,i)=>({name:p.name,id:i+1}));return allPokemonCache;}
 
-// --- Variants ---
 function dvL(dv){const p=[];if(Array.isArray(dv.stamp)&&dv.stamp.includes("1st-edition"))p.push("1st Ed.");else if(dv.subtype==="shadowless")p.push("Shadowless");else if(dv.subtype==="unlimited")p.push("Unlimited");else if(dv.subtype==="1999-2000-copyright")p.push("4th Print");else if(dv.subtype)p.push(dv.subtype);if(dv.type==="holo")p.push("Holo");else if(dv.type==="reverse")p.push("Reverse Holo");else if(dv.type==="normal"&&p.length===0)p.push("Normal");return p.join(" ")||"Normal";}
 
 function explode(cards){
@@ -67,7 +64,6 @@ function explode(cards){
   return rows;
 }
 
-// Price helpers with fallback
 function gPV(c,s){
   if(s==="tcgplayer"){const v=c.tcgplayer?.market??c.tcgplayer?.mid??null;if(v!=null)return v;}
   if(s==="cardmarket"){const v=c.cardmarket?.avg??null;if(v!=null)return v;}
@@ -83,13 +79,11 @@ function gPVSrc(c,s){
   return null;
 }
 
-// --- Goal store ---
 let GS={};function getG(n){return GS[n]||null;}function allG(){return Object.values(GS);}
 function saveGLocal(key,label,icon,c,o,setId){GS[key]={key,label,icon,cards:c,owned:new Set(o),updatedAt:Date.now(),setId:setId||null};}
 function rmGLocal(n){delete GS[n];}
 function togGLocal(n,uid){const g=GS[n];if(!g)return new Set();g.owned.has(uid)?g.owned.delete(uid):g.owned.add(uid);g.updatedAt=Date.now();return new Set(g.owned);}
 
-// --- Supabase sync ---
 async function sbSaveGoal(uid,gk,label,icon,setId){await supabase.from("goals").upsert({user_id:uid,goal_key:gk,label,icon,set_id:setId,updated_at:new Date().toISOString()},{onConflict:"user_id,goal_key"});}
 async function sbDeleteGoal(uid,gk){await supabase.from("goals").delete().eq("user_id",uid).eq("goal_key",gk);await supabase.from("owned_cards").delete().eq("user_id",uid).eq("goal_key",gk);}
 async function sbSaveOwned(uid,gk,cardUid){await supabase.from("owned_cards").upsert({user_id:uid,goal_key:gk,card_uid:cardUid},{onConflict:"user_id,goal_key,card_uid"});}
@@ -98,7 +92,6 @@ async function sbLoadGoals(uid){const{data}=await supabase.from("goals").select(
 async function sbLoadOwnedCount(uid,gk){const{count}=await supabase.from("owned_cards").select("*",{count:"exact",head:true}).eq("user_id",uid).eq("goal_key",gk);return count||0;}
 async function sbLoadOwned(uid,gk){const{data}=await supabase.from("owned_cards").select("card_uid").eq("user_id",uid).eq("goal_key",gk);return new Set((data||[]).map(r=>r.card_uid));}
 
-// --- Styles ---
 const S={
   page:{background:"#0f1115",color:"#e8e8ec",minHeight:"100vh",fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",maxWidth:680,margin:"0 auto",WebkitTapHighlightColor:"transparent"},
   header:{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",borderBottom:"1px solid #2a2d36",position:"sticky",top:0,background:"#0f1115",zIndex:100},
@@ -113,27 +106,153 @@ const S={
 function VB({variant}){let c=VBC[variant];if(!c){for(const[k,v]of Object.entries(VBC)){if(variant.includes(k)){c=v;break;}}}if(!c)c={bg:"rgba(42,45,54,0.5)",text:"#7a7d88"};return<span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:99,background:c.bg,color:c.text,whiteSpace:"nowrap"}}>{variant}</span>;}
 function GoalIcon({icon,setId,size}){if(icon&&icon.startsWith("http"))return<img src={icon} alt="" style={{width:size,height:size}}/>;if(setId)return<SetSymbol setId={setId} size={size}/>;return<span style={{fontSize:size*0.7}}>{icon||"📦"}</span>;}
 
-// --- Auth ---
-function AuthScreen({onAuth}){
-  const[mode,setMode]=useState("login");const[email,setEmail]=useState("");const[pass,setPass]=useState("");
-  const[loading,setLoading]=useState(false);const[error,setError]=useState(null);const[msg,setMsg]=useState(null);
-  const handleSubmit=async()=>{setLoading(true);setError(null);setMsg(null);
-    if(mode==="login"){const{data,error:e}=await supabase.auth.signInWithPassword({email,password:pass});if(e)setError(e.message);else onAuth(data.user);}
-    else{const{data,error:e}=await supabase.auth.signUp({email,password:pass});if(e)setError(e.message);else if(data.user?.identities?.length===0)setError("Account already exists. Try logging in.");else setMsg("Check your email to confirm your account, then log in.");}
-    setLoading(false);};
-  return(<div style={{...S.page,display:"flex",flexDirection:"column",justifyContent:"center",minHeight:"100vh"}}><div style={{padding:"0 24px",maxWidth:380,margin:"0 auto",width:"100%",boxSizing:"border-box"}}>
-    <div style={{textAlign:"center",marginBottom:48}}><div style={{fontSize:36,fontWeight:800,color:"#e8e8ec",letterSpacing:"-0.5px"}}>CollecPath</div><div style={{fontSize:15,color:"#7a7d88",marginTop:8,lineHeight:1.5}}>Track the journey.<br/>Complete the collection.</div></div>
-    <div style={{display:"flex",gap:0,marginBottom:28,background:"#181a20",borderRadius:12,padding:3}}>
-      <button onClick={()=>{setMode("login");setError(null);setMsg(null);}} style={{flex:1,padding:"10px",borderRadius:10,border:"none",fontSize:14,fontWeight:600,cursor:"pointer",background:mode==="login"?"#6c5ce7":"transparent",color:mode==="login"?"#fff":"#7a7d88",touchAction:"manipulation"}}>Log In</button>
-      <button onClick={()=>{setMode("signup");setError(null);setMsg(null);}} style={{flex:1,padding:"10px",borderRadius:10,border:"none",fontSize:14,fontWeight:600,cursor:"pointer",background:mode==="signup"?"#6c5ce7":"transparent",color:mode==="signup"?"#fff":"#7a7d88",touchAction:"manipulation"}}>Sign Up</button>
+// =============================================
+// LANDING PAGE
+// =============================================
+const FEATURES = [
+  { icon: "🔍", title: "Search Any Pokémon or Set", desc: "Find every card ever printed for your favorite Pokémon, or explore complete sets like Base Set, 151, or Obsidian Flames." },
+  { icon: "💰", title: "Real Market Prices", desc: "Live pricing from TCGPlayer, Cardmarket, and eBay sold data — so you always know the real cost." },
+  { icon: "✅", title: "Track What You Own", desc: "Check off cards as you collect them. See your completion percentage and what's left to finish." },
+  { icon: "📊", title: "Know Your Cost to Complete", desc: "Instantly see how much it'll cost to finish your goal — broken down by owned value, missing cost, and full set value." },
+];
+
+const SCREENSHOTS = [
+  { url: "/screenshots/image1.png", caption: "Every card. Every variant. Real prices." },
+  { url: "/screenshots/image2.png", caption: "Track your progress and cost to complete." },
+  { url: "/screenshots/image3.png", caption: "Tap any card for live sold prices." },
+];
+
+function LandingPage({ onAuth }) {
+  const [showAuth, setShowAuth] = useState(false);
+  const [mode, setMode] = useState("signup");
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [msg, setMsg] = useState(null);
+  const authRef = useRef(null);
+
+  const scrollToAuth = () => {
+    setShowAuth(true);
+    setTimeout(() => authRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+  };
+
+  const handleSubmit = async () => {
+    setLoading(true); setError(null); setMsg(null);
+    if (mode === "login") {
+      const { data, error: e } = await supabase.auth.signInWithPassword({ email, password: pass });
+      if (e) setError(e.message); else onAuth(data.user);
+    } else {
+      const { data, error: e } = await supabase.auth.signUp({ email, password: pass });
+      if (e) setError(e.message);
+      else if (data.user?.identities?.length === 0) setError("Account already exists. Try logging in.");
+      else setMsg("Check your email to confirm your account, then log in.");
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ background: "#0f1115", color: "#e8e8ec", minHeight: "100vh", fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" }}>
+      {/* Sticky nav */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", maxWidth: 680, margin: "0 auto", position: "sticky", top: 0, background: "#0f1115", zIndex: 100, borderBottom: "1px solid #2a2d36" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 20, fontWeight: 800 }}>CollecPath</span>
+          <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 99, background: "rgba(108,92,231,0.12)", color: "#6c5ce7", fontWeight: 600 }}>BETA</span>
+        </div>
+        <button onClick={() => { setMode("login"); scrollToAuth(); }} style={{ background: "none", border: "none", color: "#7a7d88", fontSize: 13, fontWeight: 600, cursor: "pointer", touchAction: "manipulation", padding: "8px 0" }}>Log In</button>
+      </div>
+
+      <div style={{ maxWidth: 680, margin: "0 auto", padding: "0 20px" }}>
+        {/* Hero */}
+        <div style={{ textAlign: "center", padding: "56px 0 44px" }}>
+          <h1 style={{ fontSize: 32, fontWeight: 800, lineHeight: 1.2, margin: "0 0 16px", letterSpacing: "-0.5px" }}>
+            Track the path to<br /><span style={{ color: "#6c5ce7" }}>completing your collection</span>
+          </h1>
+          <p style={{ fontSize: 16, color: "#7a7d88", lineHeight: 1.6, margin: "0 auto 32px", maxWidth: 460 }}>
+            Search any Pokémon or set. See every card ever printed, check off what you own, and know exactly what's left to finish.
+          </p>
+          <button onClick={scrollToAuth} style={{ padding: "16px 32px", borderRadius: 14, border: "none", background: "#6c5ce7", color: "#fff", fontWeight: 700, fontSize: 17, cursor: "pointer", touchAction: "manipulation", boxShadow: "0 4px 24px rgba(108,92,231,0.35)" }}>
+            Start Tracking — It's Free
+          </button>
+          <div style={{ marginTop: 12, fontSize: 13, color: "#555" }}>No credit card. No ads. Just cards.</div>
+        </div>
+
+        {/* Screenshots carousel */}
+        <div style={{ marginBottom: 56 }}>
+          <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 12, WebkitOverflowScrolling: "touch", scrollSnapType: "x mandatory" }}>
+            {SCREENSHOTS.map((ss, i) => (
+              <div key={i} style={{ flexShrink: 0, width: "80%", maxWidth: 300, scrollSnapAlign: "center" }}>
+                <div style={{ background: "#181a20", borderRadius: 16, border: "1px solid #2a2d36", overflow: "hidden" }}>
+                  <img src={ss.url} alt={ss.caption} style={{ width: "100%", display: "block", borderRadius: 16 }} />
+                </div>
+                <div style={{ fontSize: 13, color: "#7a7d88", textAlign: "center", marginTop: 10, fontWeight: 600 }}>{ss.caption}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Features grid */}
+        <div style={{ marginBottom: 56 }}>
+          <h2 style={{ fontSize: 22, fontWeight: 800, textAlign: "center", marginBottom: 28 }}>How it works</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            {FEATURES.map((f, i) => (
+              <div key={i} style={{ background: "#181a20", borderRadius: 14, border: "1px solid #2a2d36", padding: "20px 16px" }}>
+                <div style={{ fontSize: 28, marginBottom: 10 }}>{f.icon}</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#e8e8ec", marginBottom: 6 }}>{f.title}</div>
+                <div style={{ fontSize: 13, color: "#7a7d88", lineHeight: 1.5 }}>{f.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 56, textAlign: "center" }}>
+          {[
+            { val: "900+", label: "Pokémon to track" },
+            { val: "300+", label: "Sets supported" },
+            { val: "Free", label: "Forever" },
+          ].map((s, i) => (
+            <div key={i} style={{ padding: "20px 8px", background: "#181a20", borderRadius: 14, border: "1px solid #2a2d36" }}>
+              <div style={{ fontSize: 24, fontWeight: 800, color: "#6c5ce7" }}>{s.val}</div>
+              <div style={{ fontSize: 12, color: "#7a7d88", marginTop: 4 }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Auth section */}
+        <div ref={authRef} style={{ marginBottom: 60, scrollMarginTop: 80 }}>
+          <h2 style={{ fontSize: 22, fontWeight: 800, textAlign: "center", marginBottom: 6 }}>Ready to start?</h2>
+          <p style={{ fontSize: 14, color: "#7a7d88", textAlign: "center", marginBottom: 24 }}>Create a free account to save your collection across devices.</p>
+          <div style={{ maxWidth: 380, margin: "0 auto" }}>
+            <div style={{ display: "flex", gap: 0, marginBottom: 24, background: "#181a20", borderRadius: 12, padding: 3 }}>
+              <button onClick={() => { setMode("login"); setError(null); setMsg(null); }} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", fontSize: 14, fontWeight: 600, cursor: "pointer", background: mode === "login" ? "#6c5ce7" : "transparent", color: mode === "login" ? "#fff" : "#7a7d88", touchAction: "manipulation" }}>Log In</button>
+              <button onClick={() => { setMode("signup"); setError(null); setMsg(null); }} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", fontSize: 14, fontWeight: 600, cursor: "pointer", background: mode === "signup" ? "#6c5ce7" : "transparent", color: mode === "signup" ? "#fff" : "#7a7d88", touchAction: "manipulation" }}>Sign Up</button>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: "#7a7d88", fontWeight: 600, marginBottom: 6 }}>Email</div>
+              <input value={email} onChange={e => setEmail(e.target.value)} placeholder="you@email.com" type="email" style={S.input} onKeyDown={e => e.key === "Enter" && handleSubmit()} />
+            </div>
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontSize: 12, color: "#7a7d88", fontWeight: 600, marginBottom: 6 }}>Password</div>
+              <input value={pass} onChange={e => setPass(e.target.value)} placeholder={mode === "signup" ? "Min 6 characters" : "Your password"} type="password" style={S.input} onKeyDown={e => e.key === "Enter" && handleSubmit()} />
+            </div>
+            <button onClick={handleSubmit} disabled={loading || !email || !pass} style={{ ...S.btn(loading), width: "100%", fontSize: 16 }}>{loading ? "…" : mode === "login" ? "Log In" : "Create Account"}</button>
+            {error && <div style={{ padding: 12, borderRadius: 10, background: "rgba(224,85,85,0.12)", color: "#e05555", fontSize: 13, marginTop: 16, textAlign: "center" }}>{error}</div>}
+            {msg && <div style={{ padding: 12, borderRadius: 10, background: "rgba(108,92,231,0.12)", color: "#6c5ce7", fontSize: 13, marginTop: 16, textAlign: "center" }}>{msg}</div>}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ borderTop: "1px solid #2a2d36", padding: "24px 0 40px", textAlign: "center" }}>
+          <div style={{ fontSize: 12, color: "#555", marginBottom: 12 }}>
+            <span style={{ fontWeight: 700, color: "#7a7d88" }}>CollecPath</span> — Track the journey. Complete the collection.
+          </div>
+          <a href="https://discord.gg/fS9yW6d9qB" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "#6c5ce7", textDecoration: "none", fontWeight: 600 }}>Join our Discord</a>
+          <div style={{ fontSize: 11, color: "#444", marginTop: 12 }}>Powered by TCGdex + PokeTrace</div>
+        </div>
+      </div>
     </div>
-    <div style={{marginBottom:12}}><div style={{fontSize:12,color:"#7a7d88",fontWeight:600,marginBottom:6}}>Email</div><input value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@email.com" type="email" style={S.input} onKeyDown={e=>e.key==="Enter"&&handleSubmit()}/></div>
-    <div style={{marginBottom:24}}><div style={{fontSize:12,color:"#7a7d88",fontWeight:600,marginBottom:6}}>Password</div><input value={pass} onChange={e=>setPass(e.target.value)} placeholder={mode==="signup"?"Min 6 characters":"Your password"} type="password" style={S.input} onKeyDown={e=>e.key==="Enter"&&handleSubmit()}/></div>
-    <button onClick={handleSubmit} disabled={loading||!email||!pass} style={{...S.btn(loading),width:"100%",fontSize:16}}>{loading?"…":mode==="login"?"Log In":"Create Account"}</button>
-    {error&&<div style={{padding:12,borderRadius:10,background:"rgba(224,85,85,0.12)",color:"#e05555",fontSize:13,marginTop:16,textAlign:"center"}}>{error}</div>}
-    {msg&&<div style={{padding:12,borderRadius:10,background:"rgba(108,92,231,0.12)",color:"#6c5ce7",fontSize:13,marginTop:16,textAlign:"center"}}>{msg}</div>}
-    <div style={{marginTop:32,textAlign:"center"}}><div style={{fontSize:12,color:"#555",marginBottom:12}}>🔒 Your data is encrypted and synced across devices.</div><a href="https://discord.gg/fS9yW6d9qB" target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:"#6c5ce7",textDecoration:"none",fontWeight:600}}>Join our Discord →</a></div>
-  </div></div>);
+  );
 }
 
 // --- Modal with PokeTrace ---
@@ -171,7 +290,6 @@ function Modal({card,isOwned,onTog,onClose}){
   </div></div>);
 }
 
-// --- Card row with inline price ---
 function CRow({card,isOwned,onTog,onImg,ps}){
   const price=gPV(card,ps);const src=gPVSrc(card,ps);const isFB=src&&src!==ps;const dp=price!=null?fP(price,src||ps):null;
   return(<div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",borderRadius:12,background:isOwned?"rgba(108,92,231,0.1)":"#181a20",border:"1px solid #2a2d36",opacity:isOwned?0.65:1}}>
@@ -225,7 +343,7 @@ export default function App(){
 
   const openGoal=(key,label,icon,cardData,ownedSet,setId)=>{setGoalKey(key);setGoalLabel(label);setGoalIcon(icon);setGoalSetId(setId||null);setCards(cardData);setBaseCt(new Set(cardData.map(c=>c.id)).size);setOwned(ownedSet);
     const tcgCt=cardData.filter(c=>c.tcgplayer&&c.tcgplayer.market!=null).length;const cmCt=cardData.filter(c=>c.cardmarket&&c.cardmarket.avg!=null).length;if(cmCt>tcgCt)setPs("cardmarket");else setPs("tcgplayer");
-   setFilter("all");setVf("all");setSort("set");setView("results");
+    setFilter("all");setVf("all");setSort("set");setView("results");
     window.history.pushState({collecpathView:"results"},"");};
 
   const loadGoalCards=async goal=>{
@@ -256,10 +374,12 @@ export default function App(){
   const selG=g=>loadGoalCards(g);
   const tog=async uid=>{if(!goalKey)return;const g=GS[goalKey];if(!g)return;const was=g.owned.has(uid);const next=togGLocal(goalKey,uid);setOwned(new Set(next));rG();if(user){if(was)sbRemoveOwned(user.id,goalKey,uid);else sbSaveOwned(user.id,goalKey,uid);}};
   const rmGoal=async key=>{rmGLocal(key);rG();if(user)await sbDeleteGoal(user.id,key);};
+
   const goHome=(pushState=true)=>{setView("home");setCards([]);setGoalKey(null);setError(null);setFilter("all");setVf("all");if(pushState&&window.history.state?.collecpathView==="results"){window.history.back();}};
 
-// Browser back button support
+  // Browser back button support
   useEffect(()=>{const onPop=(e)=>{if(view==="results"){e.preventDefault();goHome(false);}};window.addEventListener("popstate",onPop);return()=>window.removeEventListener("popstate",onPop);},[view]);
+
   const signOut=async()=>{await supabase.auth.signOut();GS={};setGoals([]);setView("home");setCards([]);};
 
   const vOpts=[...new Set(cards.map(c=>c.variant))].sort();
@@ -270,7 +390,7 @@ export default function App(){
   const cM=cards.filter(c=>!owned.has(c.uid)).reduce((s,c)=>s+(gPV(c,ps)||0),0);
 
   if(authLoading)return<div style={S.page}><div style={{padding:60,textAlign:"center",color:"#7a7d88"}}>Loading…</div></div>;
-  if(!user)return<AuthScreen onAuth={setUser}/>;
+  if(!user)return<LandingPage onAuth={setUser}/>;
 
   return(
     <div style={S.page}>
@@ -298,9 +418,7 @@ export default function App(){
         {view==="results"&&(<>
           <button onClick={goHome} style={{background:"none",border:"none",color:"#6c5ce7",cursor:"pointer",fontSize:13,fontWeight:600,padding:"4px 0",marginBottom:12,touchAction:"manipulation"}}>← Your Goals</button>
           <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,padding:"12px 14px",...S.card}}><GoalIcon icon={goalIcon} setId={goalSetId} size={48}/><div><div style={{fontSize:18,fontWeight:800,color:"#e8e8ec",textTransform:"capitalize"}}>{goalLabel}</div><div style={{fontSize:12,color:"#7a7d88"}}>{cards.length} variants · {baseCt} cards</div></div></div>
-          {/* Price source toggle */}
           <div style={{display:"flex",gap:6,marginBottom:14}}>{PSRC.map(s=>(<button key={s.id} onClick={()=>setPs(s.id)} style={{padding:"8px 14px",borderRadius:99,border:ps===s.id?"2px solid #6c5ce7":"2px solid #2a2d36",background:ps===s.id?"rgba(108,92,231,0.12)":"transparent",cursor:"pointer",fontSize:12,fontWeight:600,color:ps===s.id?"#6c5ce7":"#7a7d88",touchAction:"manipulation"}}>{s.label} · {s.sub}</button>))}</div>
-          {/* Completion + cost summary */}
           <div style={{...S.card,padding:16,marginBottom:16}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:13,fontWeight:700,color:"#e8e8ec"}}>Completion</span><span style={{fontSize:13,fontWeight:700,color:"#6c5ce7"}}>{oc}/{tot} ({pct}%)</span></div>
             <div style={{height:7,borderRadius:99,background:"#2a2d36",marginBottom:14,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:pct===100?"#2ecc71":"#6c5ce7",borderRadius:99,transition:"width 0.4s"}}/></div>
@@ -311,7 +429,6 @@ export default function App(){
             </div>
             <div style={{fontSize:9,color:"#444",textAlign:"right",marginTop:6}}>Estimates from TCGdex · Tap a card for live prices</div>
           </div>
-          {/* Filters */}
           <div style={{marginBottom:10}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:8}}>
               <div style={{display:"flex",gap:4,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>{["all","owned","missing"].map(fl=>(<button key={fl} onClick={()=>setFilter(fl)} style={S.pill(filter===fl)}>{fl==="all"?`All (${tot})`:fl.charAt(0).toUpperCase()+fl.slice(1)}</button>))}</div>
