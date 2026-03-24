@@ -225,7 +225,8 @@ export default function App(){
 
   const openGoal=(key,label,icon,cardData,ownedSet,setId)=>{setGoalKey(key);setGoalLabel(label);setGoalIcon(icon);setGoalSetId(setId||null);setCards(cardData);setBaseCt(new Set(cardData.map(c=>c.id)).size);setOwned(ownedSet);
     const tcgCt=cardData.filter(c=>c.tcgplayer&&c.tcgplayer.market!=null).length;const cmCt=cardData.filter(c=>c.cardmarket&&c.cardmarket.avg!=null).length;if(cmCt>tcgCt)setPs("cardmarket");else setPs("tcgplayer");
-    setFilter("all");setVf("all");setSort("set");setView("results");};
+   setFilter("all");setVf("all");setSort("set");setView("results");
+    window.history.pushState({collecpathView:"results"},"");};
 
   const loadGoalCards=async goal=>{
     if(goal.needsCards||goal.cards.length===0){setLoading(true);setProgress(null);
@@ -255,7 +256,10 @@ export default function App(){
   const selG=g=>loadGoalCards(g);
   const tog=async uid=>{if(!goalKey)return;const g=GS[goalKey];if(!g)return;const was=g.owned.has(uid);const next=togGLocal(goalKey,uid);setOwned(new Set(next));rG();if(user){if(was)sbRemoveOwned(user.id,goalKey,uid);else sbSaveOwned(user.id,goalKey,uid);}};
   const rmGoal=async key=>{rmGLocal(key);rG();if(user)await sbDeleteGoal(user.id,key);};
-  const goHome=()=>{setView("home");setCards([]);setGoalKey(null);setError(null);setFilter("all");setVf("all");};
+  const goHome=(pushState=true)=>{setView("home");setCards([]);setGoalKey(null);setError(null);setFilter("all");setVf("all");if(pushState&&window.history.state?.collecpathView==="results"){window.history.back();}};
+
+// Browser back button support
+  useEffect(()=>{const onPop=(e)=>{if(view==="results"){e.preventDefault();goHome(false);}};window.addEventListener("popstate",onPop);return()=>window.removeEventListener("popstate",onPop);},[view]);
   const signOut=async()=>{await supabase.auth.signOut();GS={};setGoals([]);setView("home");setCards([]);};
 
   const vOpts=[...new Set(cards.map(c=>c.variant))].sort();
