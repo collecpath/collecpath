@@ -117,7 +117,7 @@ const FEATURES = [
 ];
 
 const SCREENSHOTS = [
-  { url: "/screenshots/image1_f.png", caption: "Every card. Every variant. Real prices." },
+  { url: "/screenshots/image1.png", caption: "Every card. Every variant. Real prices." },
   { url: "/screenshots/image2.png", caption: "Track your progress and cost to complete." },
   { url: "/screenshots/image3.png", caption: "Tap any card for live sold prices." },
 ];
