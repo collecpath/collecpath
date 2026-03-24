@@ -335,7 +335,7 @@ export default function App(){
   const[filter,setFilter]=useState("all");const[vf,setVf]=useState("all");const[sort,setSort]=useState("set");
   const[goals,setGoals]=useState([]);const[detail,setDetail]=useState(null);const[syncStatus,setSyncStatus]=useState("");
 
-  useEffect(()=>{supabase.auth.getSession().then(({data:{session}})=>{setUser(session?.user||null);setAuthLoading(false);});const{data:{subscription}}=supabase.auth.onAuthStateChange((_,session)=>{setUser(session?.user||null);});return()=>subscription.unsubscribe();},[]);
+  useEffect(()=>{supabase.auth.getSession().then(({data:{session}})=>{const u=session?.user||null;setUser(u);setAuthLoading(false);if(u)window.history.replaceState({collecpathView:"app"},"");});const{data:{subscription}}=supabase.auth.onAuthStateChange((_,session)=>{const u=session?.user||null;setUser(u);if(u)window.history.pushState({collecpathView:"app"},"");});return()=>subscription.unsubscribe();},[]);
 
   useEffect(()=>{if(!user)return;setSyncStatus("Syncing…");sbLoadGoals(user.id).then(async dbGoals=>{GS={};for(const g of dbGoals){const oc=await sbLoadOwnedCount(user.id,g.goal_key);GS[g.goal_key]={key:g.goal_key,label:g.label,icon:g.icon||"📦",cards:[],owned:new Set(),updatedAt:new Date(g.updated_at).getTime(),setId:g.set_id||null,needsCards:true,ownedCount:oc};}setGoals([...allG()]);setSyncStatus("");});},[user]);
 
@@ -378,7 +378,7 @@ export default function App(){
   const goHome=(pushState=true)=>{setView("home");setCards([]);setGoalKey(null);setError(null);setFilter("all");setVf("all");if(pushState&&window.history.state?.collecpathView==="results"){window.history.back();}};
 
   // Browser back button support
-  useEffect(()=>{const onPop=(e)=>{if(view==="results"){e.preventDefault();goHome(false);}};window.addEventListener("popstate",onPop);return()=>window.removeEventListener("popstate",onPop);},[view]);
+  useEffect(()=>{const onPop=(e)=>{if(view==="results"){e.preventDefault();goHome(false);}else if(user&&view==="home"){e.preventDefault();signOut();}};window.addEventListener("popstate",onPop);return()=>window.removeEventListener("popstate",onPop);},[view,user]);
 
   const signOut=async()=>{await supabase.auth.signOut();GS={};setGoals([]);setView("home");setCards([]);};
 
