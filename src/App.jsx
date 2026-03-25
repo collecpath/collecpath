@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { supabase } from "./supabase";
 
 const MODES = [
@@ -290,7 +290,7 @@ function Modal({card,isOwned,onTog,onClose}){
   </div></div>);
 }
 
-function CRow({card,isOwned,onTog,onImg,ps}){
+const CRow=React.memo(function CRow({card,isOwned,onTog,onImg,ps}){
   const price=gPV(card,ps);const src=gPVSrc(card,ps);const isFB=src&&src!==ps;const dp=price!=null?fP(price,src||ps):null;
   return(<div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",borderRadius:12,background:isOwned?"rgba(108,92,231,0.1)":"#181a20",border:"1px solid #2a2d36",opacity:isOwned?0.65:1}}>
     <div onClick={onTog} style={{width:28,height:28,borderRadius:8,border:isOwned?"2px solid #6c5ce7":"2px solid #2a2d36",background:isOwned?"#6c5ce7":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer",touchAction:"manipulation"}}>{isOwned&&<span style={{color:"#fff",fontSize:15,fontWeight:700}}>✓</span>}</div>
@@ -298,7 +298,7 @@ function CRow({card,isOwned,onTog,onImg,ps}){
     <div onClick={onImg} style={{flex:1,minWidth:0,cursor:"pointer"}}><div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3,flexWrap:"wrap"}}><span style={{fontSize:14,fontWeight:700,color:"#e8e8ec",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"calc(100% - 80px)"}}>{card.name}</span><VB variant={card.variant}/></div><div style={{fontSize:12,color:"#7a7d88"}}>{card.set} · #{card.localId} · {card.rarity}</div></div>
     <div onClick={onImg} style={{textAlign:"right",flexShrink:0,minWidth:55,cursor:"pointer"}}><div style={{fontSize:14,fontWeight:700,color:isOwned?"#7a7d88":"#e8e8ec",textDecoration:isOwned?"line-through":"none"}}>{dp||"—"}</div>{isFB&&<div style={{fontSize:9,color:"#555"}}>{src==="cardmarket"?"€ CM":"$ TCP"}</div>}{price==null&&<div style={{fontSize:10,color:"#555"}}>No data</div>}</div>
   </div>);
-}
+});
 
 function GCard({goal,onClick,onRm,ps}){
   const{label,icon,cards:cc,owned:oo,setId,ownedCount}=goal;
@@ -372,7 +372,7 @@ export default function App(){
     }catch(e){setError("Something went wrong.");console.error(e);}setLoading(false);setProgress(null);};
 
   const selG=g=>loadGoalCards(g);
-  const tog=async uid=>{if(!goalKey)return;const g=GS[goalKey];if(!g)return;const was=g.owned.has(uid);const next=togGLocal(goalKey,uid);setOwned(new Set(next));rG();if(user){if(was)sbRemoveOwned(user.id,goalKey,uid);else sbSaveOwned(user.id,goalKey,uid);}};
+  const tog=useCallback(async uid=>{if(!goalKey)return;const g=GS[goalKey];if(!g)return;const was=g.owned.has(uid);const next=togGLocal(goalKey,uid);setOwned(new Set(next));rG();if(user){if(was)sbRemoveOwned(user.id,goalKey,uid);else sbSaveOwned(user.id,goalKey,uid);}},[goalKey,user]);
   const rmGoal=async key=>{rmGLocal(key);rG();if(user)await sbDeleteGoal(user.id,key);};
 
   const goHome=(pushState=true)=>{setView("home");setCards([]);setGoalKey(null);setError(null);setFilter("all");setVf("all");if(pushState&&window.history.state?.collecpathView==="results"){window.history.back();}};
@@ -382,12 +382,11 @@ export default function App(){
 
   const signOut=async()=>{await supabase.auth.signOut();GS={};setGoals([]);setView("home");setCards([]);};
 
-  const vOpts=[...new Set(cards.map(c=>c.variant))].sort();
-  const sorted=[...cards].sort((a,b)=>{if(sort==="price-desc")return(gPV(b,ps)||0)-(gPV(a,ps)||0);if(sort==="price-asc")return(gPV(a,ps)||0)-(gPV(b,ps)||0);if(sort==="rarity")return(a.rarity||"").localeCompare(b.rarity||"");return a.sortIndex-b.sortIndex;});
-  const filt=sorted.filter(c=>{if(filter==="owned"&&!owned.has(c.uid))return false;if(filter==="missing"&&owned.has(c.uid))return false;if(vf!=="all"&&c.variant!==vf)return false;return true;});
+  const vOpts=useMemo(()=>[...new Set(cards.map(c=>c.variant))].sort(),[cards]);
+  const sorted=useMemo(()=>[...cards].sort((a,b)=>{if(sort==="price-desc")return(gPV(b,ps)||0)-(gPV(a,ps)||0);if(sort==="price-asc")return(gPV(a,ps)||0)-(gPV(b,ps)||0);if(sort==="rarity")return(a.rarity||"").localeCompare(b.rarity||"");return a.sortIndex-b.sortIndex;}),[cards,sort,ps]);
+  const filt=useMemo(()=>sorted.filter(c=>{if(filter==="owned"&&!owned.has(c.uid))return false;if(filter==="missing"&&owned.has(c.uid))return false;if(vf!=="all"&&c.variant!==vf)return false;return true;}),[sorted,filter,vf,owned]);
   const tot=cards.length,oc=owned.size,pct=tot>0?Math.round((oc/tot)*100):0;
-  const cO=cards.filter(c=>owned.has(c.uid)).reduce((s,c)=>s+(gPV(c,ps)||0),0);
-  const cM=cards.filter(c=>!owned.has(c.uid)).reduce((s,c)=>s+(gPV(c,ps)||0),0);
+  const{cO,cM}=useMemo(()=>{let cO=0,cM=0;for(const c of cards){const p=gPV(c,ps)||0;if(owned.has(c.uid))cO+=p;else cM+=p;}return{cO,cM};},[cards,owned,ps]);
 
   if(authLoading)return<div style={S.page}><div style={{padding:60,textAlign:"center",color:"#7a7d88"}}>Loading…</div></div>;
   if(!user)return<LandingPage onAuth={setUser}/>;
