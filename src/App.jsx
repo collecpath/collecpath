@@ -343,8 +343,9 @@ export default function App(){
 
   const openGoal=(key,label,icon,cardData,ownedSet,setId)=>{setGoalKey(key);setGoalLabel(label);setGoalIcon(icon);setGoalSetId(setId||null);setCards(cardData);setBaseCt(new Set(cardData.map(c=>c.id)).size);setOwned(ownedSet);
     const tcgCt=cardData.filter(c=>c.tcgplayer&&c.tcgplayer.market!=null).length;const cmCt=cardData.filter(c=>c.cardmarket&&c.cardmarket.avg!=null).length;if(cmCt>tcgCt)setPs("cardmarket");else setPs("tcgplayer");
-    setFilter("all");setVf("all");setSort("set");setView("results");
-    window.history.pushState({collecpathView:"results"},"");};
+    setFilter("all");setVf("all");setSort("set");
+    if(view==="results"){window.history.replaceState({collecpathView:"results"},"");}else{window.history.pushState({collecpathView:"results"},"");}
+    setView("results");};
 
   const loadGoalCards=async goal=>{
     if(goal.needsCards||goal.cards.length===0){setLoading(true);setProgress(null);
@@ -375,10 +376,10 @@ export default function App(){
   const tog=useCallback(async uid=>{if(!goalKey)return;const g=GS[goalKey];if(!g)return;const was=g.owned.has(uid);const next=togGLocal(goalKey,uid);setOwned(new Set(next));rG();if(user){if(was)sbRemoveOwned(user.id,goalKey,uid);else sbSaveOwned(user.id,goalKey,uid);}},[goalKey,user]);
   const rmGoal=async key=>{rmGLocal(key);rG();if(user)await sbDeleteGoal(user.id,key);};
 
-  const goHome=(pushState=true)=>{setView("home");setCards([]);setGoalKey(null);setError(null);setFilter("all");setVf("all");if(pushState&&window.history.state?.collecpathView==="results"){window.history.back();}};
+  const goHome=(fromPopState=false)=>{setView("home");setCards([]);setGoalKey(null);setError(null);setFilter("all");setVf("all");if(!fromPopState){window.history.replaceState({collecpathView:"app"},"");}};
 
   // Browser back button support
-  useEffect(()=>{const onPop=(e)=>{if(view==="results"){e.preventDefault();goHome(false);}else if(user&&view==="home"){e.preventDefault();signOut();}};window.addEventListener("popstate",onPop);return()=>window.removeEventListener("popstate",onPop);},[view,user]);
+  useEffect(()=>{const onPop=(e)=>{if(view==="results"){goHome(true);}};window.addEventListener("popstate",onPop);return()=>window.removeEventListener("popstate",onPop);},[view]);
 
   const signOut=async()=>{await supabase.auth.signOut();GS={};setGoals([]);setView("home");setCards([]);};
 
